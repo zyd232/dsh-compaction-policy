@@ -1,129 +1,166 @@
 # dsh-compaction-policy
 
-Per-route compaction **trigger** policy for DeepSeek Harness (DSH) 0.2.
+**Stop DeepSeek Harness from condensing your conversation too early — and put the
+trigger where you want it.**
 
-[中文](README-zh.md)
+DSH automatically condenses older history when a conversation grows. On a lot of
+models it starts much earlier than "80% full", and then it does it again a few
+steps later. This plugin gives you that decision back: it does not edit any
+config file, it adjusts the running compaction engine.
 
-## The problem
+## Is this for you?
 
-DSH computes its automatic pressure trigger as
+Probably yes if any of these sound familiar:
+
+- Your model's context window is smaller than roughly **330,000 tokens** (most
+  local models, many hosted models).
+- DSH condenses the conversation while the context ring still looks half empty.
+- Right after a condensation the ring climbs back to the same place within a few
+  steps, so it happens over and over.
+
+If you only ever use very large windows (e.g. 1M), the built-in behaviour is
+already near 80% and you most likely don't need this.
+
+## Why it happens
+
+Before each step DSH checks how large the next request would be and compares it
+to this trigger:
 
 ```
-threshold = floor(min(W × thresholdRatio, W − O − headroomTokens))
+trigger = min(window × 0.8, window − output reserve − 65536)
 ```
 
-with `thresholdRatio: 0.8` and `headroomTokens: 65536` by default, where `W` is
-the routed model's `contextWindow` and `O` the output tokens the request
-reserves. For every window below 327,680 tokens the **headroom term wins**, so
-the trigger collapses to roughly `1 − headroom / W`:
+- **window** — the model's context window as DSH knows it.
+- **output reserve** — how many tokens the request asks the provider to keep free
+  for the answer.
+- **65536** — a fixed safety margin DSH always sets aside.
 
-| W | stock trigger |
-|---|---|
-| 128,000 | 62,464 (49%) |
-| 150,000 | 84,464 (56%) |
-| 246,000 | 180,464 (73%) |
+The second half of that formula is the catch: it subtracts a *fixed* 65,536
+tokens regardless of how large the window is. Once the window is below about
+330,000, that fixed subtraction is the tighter of the two limits, so it becomes
+the real trigger:
 
-A local llama.cpp model therefore starts compacting just past half its window,
-and after each compaction only ~9k of headroom is left before the next one.
+| Context window | Where DSH actually triggers | Where 80% would be |
+|---|---|---|
+| 128k | ~62k (49%) | 102k |
+| 150k | ~84k (56%) | 120k |
+| 256k | ~190k (74%) | 205k |
+| 1M | ~678k (68%) | 800k |
 
-### Why a config file cannot fix it
+On very small windows (roughly up to 65k) the fixed margin swallows the whole
+window: DSH then refuses to configure proactive compaction at all and only reacts
+*after* a request is rejected for being too long — which throws away far more
+history than a planned condensation would.
 
-DSH 0.2 moved the compaction backend out of the host plane and into **each agent
-preset**:
+## Why editing a config file doesn't help
 
-- `@deepseek-ai/dsh-web-app/cordis.patch.yml` disables the host-plane
-  `compaction-basic` row (`disabled: true`).
-- `@deepseek-ai/dsh-web-app/presets/{standard,ptc,cordis}.patch.yml` each declare
-  their own `compaction-basic` row with no config.
+In DSH 0.2 the compaction policy lives inside each *agent preset*, and a preset is
+addressed as one whole definition: neither a profile config file nor a plugin's
+own config layer can change a single field of it. The only way to write it to disk
+is to replace the preset body — which pins your preset and stops it from picking
+up DSH updates.
 
-Any patch layer — the profile's `cordis.patch.yml` **and** a plugin's own
-`dsh.bundle.patch.yml` — only reaches the host plane, so `- id: compaction-basic`
-rows silently land on the disabled row. (The published `billion-context` plugin
-has the same dead `config.auto: false` row.) The only persistence path for a
-preset definition is the profile configuration editor, which rewrites the whole
-preset row and pins it — including the entire plugin list — against future DSH
-updates.
+So this plugin doesn't touch any file. It changes the behaviour of the compaction
+engine while DSH runs.
 
-## What this plugin does
+## What it does
 
-It gates the **live** engine instead of configuring it:
-
-1. On the serial `agent/pre-step` waterfall (prepended, so the wrapper is in
-   place before the backend's own listener), it resolves the preset-scoped
-   engine through `agentPresets.serviceFor(agent, 'compaction')`.
-2. It wraps `compactIfNeeded` once per engine instance. A `pressure` check below
-   **our** threshold returns `null` (no compaction) and never reaches the
-   backend; at or above it the original call runs unchanged.
-3. `context-overflow` recovery and manual `/compact` keep their native
-   semantics.
-
-Nothing is persisted, no preset is pinned, and any failure inside the gate
-delegates to the stock behaviour.
+- Below **your** trigger it answers "nothing to do", so DSH's own check never runs.
+- At or above it, the decision goes straight back to DSH — identical to the stock
+  behaviour.
+- Emergency recovery after an over-long request and the manual `/compact` command
+  are never touched.
+- If anything inside the plugin goes wrong, it steps aside and DSH behaves exactly
+  as if the plugin weren't installed.
 
 ## Install
 
 ```powershell
-# from GitHub (no build step: lib/ is the shipped artifact)
-dsh plugin --profile desktop add github:zyd232/dsh-compaction-policy
-
-# or from a local checkout
-dsh plugin --profile desktop add link:G:\path\to\dsh-compaction-policy
+dsh plugin --profile <your profile> add github:zyd232/dsh-compaction-policy
 ```
 
-Then restart the host. Existing sessions pick the gate up on their first step
-after the restart — the wrapper is installed lazily per engine instance, so a new
-session is not required.
+Use the profile you actually run — `desktop` for the desktop app, `web` for
+`dsh web`, or your own profile name. Then **restart DSH**: plugin rows are only
+read at startup, so without a restart nothing changes.
 
-Uninstall:
+You do **not** need to start a new conversation. Existing conversations are picked
+up on their next step.
+
+To remove it again:
 
 ```powershell
-dsh plugin --profile desktop remove dsh-compaction-policy
+dsh plugin --profile <your profile> remove dsh-compaction-policy
 ```
+
+## Where the settings are
+
+Open **Settings** and look at the left sidebar: you will find a **上下文压缩策略**
+("Compaction policy") entry alongside the built-in sections.
+
+Everything there is saved to DSH's normal settings document and applies
+immediately — no restart needed. Each field also has a **restore default** button
+that removes your override.
 
 ## Settings
 
-The plugin registers the settings namespace `compaction-policy` (the same string
-as its bundle row id) and contributes a **Settings → 上下文压缩策略** section
-through the `settings.section` slot.
-
-| Field | Default | Meaning |
+| Field | Default | What it means |
 |---|---|---|
-| `enabled` | `true` | Master switch; off restores stock behaviour. |
-| `routes` | `llama-cpp` | `provider` or `provider/model` entries, comma/space separated. Empty = intervene nowhere. |
-| `triggerRatio` | `0.8` | Window fraction cap. |
-| `headroomTokens` | `24576` | Output reservation used by **our** threshold, replacing the shipped 65,536. |
+| Enable | on | Turn the plugin off to get DSH's stock behaviour back. |
+| Routes | `*` | Which routes it governs: `provider` or `provider/model`, comma or space separated. `*` = every route. |
+| Trigger ratio | `0.8` | Condense once the context reaches this share of the window. `0.8` = 80%, DSH's own default. |
+| Output reserve (tokens) | `24576` | The margin kept free for the model's answer. DSH's own value is `65536`; this is the knob that fixes the early trigger. |
 
-Fields are `volatile`, so writes apply live through the settings document
-(`applies: 'live'`); each field has a "restore default" action that clears the
-user override.
+## Choosing values
 
-## Verification
+General rule first, examples second.
+
+- **Trigger ratio** — leave it at `0.8` unless you want extra safety. On a very
+  small window some people prefer `0.7`.
+- **Output reserve** — set it to the longest answer you realistically expect, plus
+  a little slack. `16384`–`32768` covers most chat and coding work; a model that
+  writes very long files may want more. Too small a reserve risks a request being
+  rejected because the answer had nowhere to go.
+- **Routes** — narrow it when you only want some providers affected. For example
+  `llama-cpp` (only local models served by llama.cpp), `ollama`, `openai`, or
+  `ollama/*` to spell out every model of that provider.
+
+With the default reserve of 24,576 the trigger becomes a clean 80% of the window
+for every window above roughly 123k, and stays proportional below that.
+
+## How to tell it's working
+
+Compaction is recorded in the session log. If you want numbers instead of a
+feeling, take the request size immediately before a compaction and divide it by
+the model's window: it should now land near your trigger ratio instead of the old
+~50% mark.
+
+Visually, the context ring should keep growing past the point where it used to
+drop.
+
+## Limitations
+
+- **It moves the trigger only.** How much history a condensation keeps and how
+  long the summary may be still come from DSH's compaction backend.
+- **Very small windows stay unsolvable.** If the window cannot hold the request
+  itself (the fixed system prompt plus tool schemas), no policy helps. DSH's
+  backend refuses to configure proactive compaction for such a route, and this
+  plugin deliberately leaves that alone instead of retrying forever.
+- **It uses DSH internals.** It finds the running compaction engine through DSH's
+  service API (`agentPresets.serviceFor(…, 'compaction')`) and wraps its
+  `compactIfNeeded` method. If a future DSH renames that service or changes that
+  signature, the plugin needs an update — until then it simply does nothing rather
+  than misbehave.
+- **Settings page language.** The panel is currently Chinese-only; localization is
+  a welcome contribution.
+- Verified against DSH `0.2.0-rc.2`.
+
+## Development
 
 ```powershell
 node --test tests/policy.test.js tests/instrument.test.js
 ```
 
-`policy.test.js` pins the threshold arithmetic (including the 56% stock value and
-the volatile-cell/plain-value shapes); `instrument.test.js` drives the real host
-half against a mock context and engine and asserts that below-threshold checks
-never reach the engine, non-pressure triggers always do, a broken gate delegates,
-and wrapping is idempotent.
+No build step: `lib/` is the shipped artifact, so installing straight from this
+repository needs no `prepare` script.
 
-Behaviourally, compaction events land in the session log: read the prompt size of
-the request preceding each `compaction/start` and divide by the model's window.
-
-## Limitations
-
-- **Trigger only.** The backend still owns retention (`retainRatio: 0.16`) and
-  the summary cap (default `maxTokens = headroomTokens`). Moving the trigger
-  later makes the compactable span much larger, which also removes the
-  "summary is not smaller than the shadowed content" deadlock seen when only
-  ~6k remained compactable.
-- **Small windows are not covered.** A route whose window cannot hold the fixed
-  request envelope (`W − O − headroom ≤ 0`, e.g. an 8k embedding route or a 32k
-  model in a full desktop session) has no working proactive policy at all; the
-  engine throws a `TargetPressureConfigError`. This plugin deliberately does not
-  invent one.
-- It reads services (`agentPresets.serviceFor`, `tokenMeter`, `llm`) rather than
-  configuration, so it depends on the backend keeping the service name
-  `compaction` and the `compactIfNeeded(agent, trigger, signal)` signature.
+MIT licensed — see [LICENSE](LICENSE).

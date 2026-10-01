@@ -1,108 +1,130 @@
 # dsh-compaction-policy
 
-DeepSeek Harness（DSH）0.2 的**逐路由压缩触发点**插件。
+**让 DeepSeek Harness 别再把对话压得太早——把触发时机交还给你。**
 
-[English](README.md)
+DSH 会在对话变长时自动把较早的历史压缩成一份摘要。不少模型上，它动手的时机远早于“窗口
+用掉 80%”：经常刚过半就开始，而且压完没几步又来一次。这个插件把决定权交回给你——它不改
+任何配置文件，只调整正在运行的压缩引擎。
 
-## 要解决的问题
+## 你需要它吗
 
-DSH 的自动压缩阈值是
+下面任何一条对上，基本就需要：
+
+- 你用的模型上下文窗口小于约 **33 万 token**（大多数本地模型、不少云端模型都是）。
+- 上下文环看着才用了一半，DSH 就开始压缩对话。
+- 压完之后，环没几步又爬回同样的位置，于是反复压缩。
+
+如果你只用超大窗口（比如 1M），DSH 原生行为本来就接近 80%，大概不需要它。
+
+## 为什么会这样
+
+每一步之前，DSH 会估算下一次请求有多大，并与下面这个触发点比较：
 
 ```
-threshold = floor(min(W × thresholdRatio, W − O − headroomTokens))
+触发点 = min(窗口 × 0.8, 窗口 − 输出预留 − 65536)
 ```
 
-默认 `thresholdRatio: 0.8`、`headroomTokens: 65536`。`W` 是路由模型的 `contextWindow`，`O` 是请求预留的输出 token。**只要窗口小于 327,680，起决定作用的就是 headroom 那一项**，触发点塌缩成大约 `1 − headroom / W`：
+- **窗口**：DSH 记录的模型上下文窗口。
+- **输出预留**：这次请求要求服务商为回答保留的 token 数。
+- **65536**：DSH 固定留出的安全余量。
 
-| 窗口 W | 原生触发点 |
-|---|---|
-| 128,000 | 62,464（49%） |
-| 150,000 | 84,464（56%） |
-| 246,000 | 180,464（73%） |
+问题出在公式后半段：不管窗口多大，它都固定减掉 65536。窗口一旦小于约 33 万，这个固定值
+就比 80% 更紧，于是它成了真正的触发点：
 
-所以本地 llama.cpp 模型刚过半就开始压缩，压完只剩约 9k 余量，很快又触发下一次。
+| 上下文窗口 | DSH 实际触发 | 80% 应该在 |
+|---|---|---|
+| 128k | 约 62k（49%） | 102k |
+| 150k | 约 84k（56%） | 120k |
+| 256k | 约 190k（74%） | 205k |
+| 1M | 约 678k（68%） | 800k |
 
-### 为什么改配置文件没用
+窗口再小（大约 6.5 万以内），这个固定余量会把窗口整个吃掉：DSH 干脆放弃主动压缩，只在某次
+请求因为过长被拒绝之后才补救——那时丢掉的历史比计划内的压缩多得多。
 
-DSH 0.2 把压缩后端从 host 层搬进了**每个 agent preset**：
+## 为什么改配置文件没用
 
-- `@deepseek-ai/dsh-web-app/cordis.patch.yml` 把 host 层的 `compaction-basic` 置为
-  `disabled: true`；
-- `@deepseek-ai/dsh-web-app/presets/{standard,ptc,cordis}.patch.yml` 各自声明一份
-  没有 config 的 `compaction-basic`。
+DSH 0.2 把压缩策略放在每个 **agent preset** 里，而 preset 是按“整份定义”寻址的：无论
+profile 的配置文件，还是插件自带的配置层，都改不动它里面的某一个字段。唯一的落盘办法是整份
+替换 preset 内容——那会把你的 preset 钉死，之后 DSH 升级也不再生效。
 
-任何补丁层——profile 的 `cordis.patch.yml`，**以及插件自带的
-`dsh.bundle.patch.yml`**——都只能打到 host 层，于是 `- id: compaction-basic`
-会静默落在那条被禁用的行上（已发布的 `billion-context` 插件也有一条同样失效的
-`config.auto: false`）。preset 定义唯一的持久化通道是 Profile 配置编辑器，而它
-会整行重写 preset（连同完整插件列表一起"钉死"，之后 DSH 升级不再生效）。
+所以这个插件不碰任何文件，它改的是运行时压缩引擎的行为。
 
-## 本插件的做法
+## 它做什么
 
-不去写配置，而是**拦截运行中的引擎**：
-
-1. 在串行的 `agent/pre-step` waterfall 上（用 `prepend` 抢在后端自己的监听器之前），
-   通过 `agentPresets.serviceFor(agent, 'compaction')` 取到 preset 作用域里的引擎实例；
-2. 每个实例只包装一次 `compactIfNeeded`：`pressure` 检查若低于**本插件**的阈值就直接
-   返回 `null`（不压缩），达到或超过才原样交给后端；
-3. `context-overflow` 溢出恢复与人工 `/compact` 保持原生语义。
-
-不落盘任何配置、不钉住 preset；网关内部任何异常都退回原生行为。
+- 没到**你**设的触发点：它直接回答“这次不用压”，DSH 自己的检查根本不会执行。
+- 到了或超过：决定原样交回 DSH，和装插件之前完全一样。
+- 请求过长后的紧急恢复、以及手动 `/compact`，都不受影响。
+- 插件内部一旦出错，它会自动让路，DSH 的表现与没装插件时完全一致。
 
 ## 安装
 
 ```powershell
-# 从 GitHub 安装（无构建步骤：lib/ 就是发布产物）
-dsh plugin --profile desktop add github:zyd232/dsh-compaction-policy
-
-# 或从本地目录安装
-dsh plugin --profile desktop add link:G:\path\to\dsh-compaction-policy
+dsh plugin --profile <你的 profile> add github:zyd232/dsh-compaction-policy
 ```
 
-然后重启宿主。已存在的会话在重启后的第一步就会被接上——网关是按引擎实例懒安装的，
-不需要新开会话。
+profile 填你实际在跑的那个：桌面端是 `desktop`，`dsh web` 是 `web`，也可以是自定义名字。
+装完**必须重启 DSH**——插件行只在启动时读取，不重启等于没装。
+
+**不需要新开会话**：已存在的会话在下一步就会被接上。
 
 卸载：
 
 ```powershell
-dsh plugin --profile desktop remove dsh-compaction-policy
+dsh plugin --profile <你的 profile> remove dsh-compaction-policy
 ```
 
-## 设置
+## 设置在哪
 
-插件注册的设置命名空间是 `compaction-policy`（与其 bundle 行 id 同字符串），并通过
-`settings.section` 槽贡献 **设置 → 上下文压缩策略** 页。
+打开**设置**，看左侧边栏：在内置分区之间会多出一项 **上下文压缩策略**。
 
-| 字段 | 默认值 | 含义 |
+里面的值会写进 DSH 正常的设置文档，改完立即生效、不用重启；每个字段还有「恢复默认」，用来
+清掉你的覆盖值。
+
+## 设置项
+
+| 字段 | 默认 | 含义 |
 |---|---|---|
-| `enabled` | `true` | 总开关；关闭即完全交回原生策略。 |
-| `routes` | `llama-cpp` | `provider` 或 `provider/model`，逗号/空格分隔；留空=不干预。 |
-| `triggerRatio` | `0.8` | 窗口占比上限。 |
-| `headroomTokens` | `24576` | 本插件阈值使用的输出预留，替代原生 65,536。 |
+| 启用 | 开 | 关掉就完全回到 DSH 原生策略。 |
+| 生效路由 | `*` | 对哪些路由生效：`provider` 或 `provider/model`，逗号或空格分隔；`*` = 全部路由。 |
+| 触发比例 | `0.8` | 上下文用到窗口的百分之多少时压缩。`0.8` = 80%，与 DSH 原生默认一致。 |
+| 预留输出余量（token） | `24576` | 留给模型回答的余量。DSH 原生是 `65536`；把它调小，过早压缩的问题才会消失。 |
 
-字段均为 `volatile`，写入经设置文档即时生效（`applies: 'live'`）；每个字段都有
-"恢复默认"（清除用户覆盖，回到组装层）。
+## 怎么选值
 
-## 验证
+先说通则，再举例。
+
+- **触发比例**：没有特别理由就用 `0.8`；窗口很小、求稳的话有人用 `0.7`。
+- **预留输出余量**：设成你实际会遇到的最长回答再加一点余量。`16384`–`32768` 够大多数聊天
+  和写代码场景；经常让模型写超长文件的可以再大些。留得太小可能导致回答没有空间、请求被拒。
+- **生效路由**：只想影响部分服务商时再收窄。例如 `llama-cpp`（只管 llama.cpp 起的本地
+  模型）、`ollama`、`openai`，或 `ollama/*` 这种写法。
+
+按默认的 24576 余量，窗口大于约 12.3 万时触发点就是干净的 80%，更小的窗口则按比例下移。
+
+## 怎么确认生效
+
+压缩事件会记在会话日志里。想要硬数字：取每次压缩之前那次请求的大小，除以该模型的窗口，应该
+落在你设的比例附近，而不是原来的 50% 上下。
+
+直观上看，上下文环应该能越过以前开始回落的那条线继续涨。
+
+## 已知边界
+
+- **只改触发点**。一次压缩保留多少历史、摘要可以多长，仍由 DSH 的压缩后端决定。
+- **极小窗口无解**。如果窗口连请求本身（固定的系统提示词加工具 schema）都装不下，任何策略都
+  没用；DSH 后端会拒绝对这类路由做主动压缩，本插件刻意不去反复重试。
+- **依赖 DSH 内部接口**。它通过 DSH 的服务 API（`agentPresets.serviceFor(…, 'compaction')`）
+  找到正在运行的压缩引擎，并包装它的 `compactIfNeeded`。将来 DSH 若改名或改签名，插件需要
+  同步更新；在那之前它只会“什么都不做”，不会乱来。
+- **设置页语言**：目前只有中文界面，欢迎补本地化。
+- 已在 DSH `0.2.0-rc.2` 上验证。
+
+## 开发
 
 ```powershell
 node --test tests/policy.test.js tests/instrument.test.js
 ```
 
-`policy.test.js` 固定阈值算式（含原生 56% 这个值与 volatile 单元/裸值两种形态）；
-`instrument.test.js` 用假 ctx 与假引擎驱动真实的 host 半实现，断言：低于阈值绝不
-调用引擎、非 pressure 触发一律放行、网关内部报错时放行、重复包装是幂等的。
+没有构建步骤：`lib/` 就是发布产物，所以直接从本仓库安装不需要 `prepare` 脚本。
 
-行为层面：压缩事件写在会话日志里——读每次 `compaction/start` 之前那次请求的 prompt
-token 数，除以该模型的窗口即可。
-
-## 已知边界
-
-- **只管触发点**。保留策略（`retainRatio: 0.16`）与摘要上限（默认
-  `maxTokens = headroomTokens`）仍由后端决定。把触发点推后会让可压缩区间大得多，
-  这同时消除了"摘要压不动"那个死循环（之前只剩约 6k 可压缩时必然失败）。
-- **不覆盖极小窗口**。若某路由的窗口连固定信封都装不下（`W − O − headroom ≤ 0`，
-  例如 8k 的 embedding 路由，或完整桌面会话里的 32k 模型），它的主动压缩在原生实现里
-  就是抛 `TargetPressureConfigError` 而不可用；本插件刻意不另造一套。
-- 它读的是**服务**（`agentPresets.serviceFor`、`tokenMeter`、`llm`）而非配置，因此依赖
-  后端保持服务名 `compaction` 与 `compactIfNeeded(agent, trigger, signal)` 签名。
+MIT 许可，见 [LICENSE](LICENSE)。

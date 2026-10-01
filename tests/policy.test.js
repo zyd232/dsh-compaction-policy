@@ -26,6 +26,14 @@ test('routeMatches honours a bare provider and an exact pair', () => {
   assert.equal(routeMatches(entries, undefined), false)
 })
 
+test('the * wildcard matches every route, at either position', () => {
+  const any = parseRouteList('*')
+  assert.equal(routeMatches(any, { provider: 'anything', model: 'anything' }), true)
+  const anyModel = parseRouteList('ollama/*')
+  assert.equal(routeMatches(anyModel, { provider: 'ollama', model: 'qwen3' }), true)
+  assert.equal(routeMatches(anyModel, { provider: 'openai', model: 'gpt' }), false)
+})
+
 test('computeTriggerTokens reproduces the engine formula with our headroom', () => {
   // 150k window, no output reservation: stock headroom 65536 gives 84464 (56.3%);
   // ours gives the 0.8 cap because W - headroom is no longer the smaller term.
@@ -90,13 +98,13 @@ test('normalizePolicy accepts plain values and schemastery volatile cells alike'
   // absent / malformed input falls back to the schema defaults
   assert.deepEqual(normalizePolicy(undefined), {
     enabled: true,
-    routes: 'llama-cpp',
+    routes: '*',
     triggerRatio: 0.8,
     headroomTokens: 24576,
   })
   assert.deepEqual(normalizePolicy({ enabled: 'yes', triggerRatio: 'x', headroomTokens: null }), {
     enabled: false,
-    routes: 'llama-cpp',
+    routes: '*',
     triggerRatio: 0.8,
     headroomTokens: 24576,
   })
