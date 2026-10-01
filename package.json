@@ -1,6 +1,6 @@
 {
   "name": "dsh-compaction-policy",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Put DSH's automatic context compaction trigger where you want it, per provider/model. Stops DeepSeek Harness from condensing a conversation far earlier than the configured threshold on models with smaller context windows.",
   "type": "module",
   "main": "lib/index.js",
