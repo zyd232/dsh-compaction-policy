@@ -1,7 +1,7 @@
 {
   "name": "dsh-compaction-policy",
   "version": "0.1.0",
-  "description": "Put DSH's automatic context compaction trigger where you want it, per route. Stops conversations from being condensed far earlier than the configured threshold on models with smaller context windows. DeepSeek Harness 上下文压缩触发点插件。",
+  "description": "Put DSH's automatic context compaction trigger where you want it, per provider/model. Stops DeepSeek Harness from condensing a conversation far earlier than the configured threshold on models with smaller context windows.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
