@@ -77,7 +77,8 @@ dsh plugin --profile <你的 profile> remove dsh-compaction-policy
 
 ## 设置在哪
 
-打开**设置**，看左侧边栏：在内置分区之间会多出一项 **上下文压缩策略**。
+打开**设置**，看左侧边栏：在内置分区之间会多出一项 **上下文压缩策略**（英文界面下叫
+Compaction policy）。面板跟随 DSH 的语言（**设置 → 通用 → 语言**），默认英语、已含中文。
 
 里面的值会写进 DSH 正常的设置文档，改完立即生效、不用重启；每个字段还有「恢复默认」，用来
 清掉你的覆盖值。
@@ -118,7 +119,7 @@ dsh plugin --profile <你的 profile> remove dsh-compaction-policy
 - **依赖 DSH 内部接口**。它通过 DSH 的服务 API（`agentPresets.serviceFor(…, 'compaction')`）
   找到正在运行的压缩引擎，并包装它的 `compactIfNeeded`。将来 DSH 若改名或改签名，插件需要
   同步更新；在那之前它只会“什么都不做”，不会乱来。
-- **设置页语言**：目前只有中文界面，欢迎补本地化。
+- **语言**：设置页与本文档提供中文和英文，并跟随 DSH 的语言设置（默认英语）；欢迎补其他语言。
 - 已在 DSH `0.2.0-rc.2` 上验证。
 
 ## 开发

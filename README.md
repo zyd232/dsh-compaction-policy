@@ -96,8 +96,9 @@ dsh plugin --profile <your profile> remove dsh-compaction-policy
 
 ## Where the settings are
 
-Open **Settings** and look at the left sidebar: you will find a **上下文压缩策略**
-("Compaction policy") entry alongside the built-in sections.
+Open **Settings** and look at the left sidebar: you will find a **Compaction
+policy** entry alongside the built-in sections. The panel follows DSH's language
+(**Settings → General → Language**) and defaults to English; Chinese is included.
 
 Everything there is saved to DSH's normal settings document and applies
 immediately — no restart needed. Each field also has a **restore default** button
@@ -152,8 +153,8 @@ drop.
   `compactIfNeeded` method. If a future DSH renames that service or changes that
   signature, the plugin needs an update — until then it simply does nothing rather
   than misbehave.
-- **Settings page language.** The panel is currently Chinese-only; localization is
-  a welcome contribution.
+- **Languages.** The panel and this document ship in English and Chinese and
+  follow DSH's language setting; more languages are welcome as contributions.
 - Verified against DSH `0.2.0-rc.2`.
 
 ## Development
