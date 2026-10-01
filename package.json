@@ -17,7 +17,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test tests/policy.test.js tests/instrument.test.js"
+    "test": "node --test tests/policy.test.js tests/instrument.test.js tests/i18n.test.js"
   },
   "dsh": {
     "bundle": {

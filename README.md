@@ -1,5 +1,7 @@
 # dsh-compaction-policy
 
+English | [中文](README-zh.md)
+
 **Stop DeepSeek Harness from condensing your conversation too early — and put the
 trigger where you want it.**
 

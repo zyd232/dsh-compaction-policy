@@ -1,5 +1,7 @@
 # dsh-compaction-policy
 
+[English](README.md) | 中文
+
 **让 DeepSeek Harness 别再把对话压得太早——把触发时机交还给你。**
 
 DSH 会在对话变长时自动把较早的历史压缩成一份摘要。不少模型上，它动手的时机远早于“窗口
