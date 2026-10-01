@@ -1,0 +1,12 @@
+# dependencies (the harness provides them; the local test junction lives here too)
+node_modules/
+
+# local scratch
+*.log
+*.bak-*
+.dsh-*
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini

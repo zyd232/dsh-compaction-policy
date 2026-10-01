@@ -1,0 +1,11 @@
+# dsh-compaction-policy bundle layer.
+#
+# Mounted automatically when the profile lists this package in
+# `dsh.profile.bundles` (`dsh plugin --profile <name> add <this package>`); the
+# loader resolves `name` through the installed package's main entry.
+#
+# The row id doubles as the settings namespace, so the browser half can join its
+# section to this entry (`configForms.get('compaction-policy')`).
+- insert:
+    - id: compaction-policy
+      name: dsh-compaction-policy

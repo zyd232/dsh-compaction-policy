@@ -1,0 +1,2 @@
+# keep the repository LF-only so the shipped JS/YAML is identical on every platform
+* text=auto eol=lf
