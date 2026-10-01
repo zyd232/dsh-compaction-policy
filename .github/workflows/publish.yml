@@ -50,10 +50,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      # v5 turns its package-manager cache on by default and fails on a repository
+      # whose package manager it cannot resolve; this plugin has no build step and a
+      # three-package install, so the cache buys nothing.
       - uses: actions/setup-node@v5
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false
 
       # The tests import one harness package (an optional peer, so consumers do not
       # install it); CI installs it to exercise the real host half.
