@@ -154,3 +154,35 @@ node --test tests/policy.test.js tests/instrument.test.js
 没有构建步骤：`lib/` 就是发布产物，所以直接从本仓库安装不需要 `prepare` 脚本。
 
 MIT 许可，见 [LICENSE](LICENSE)。
+
+## 发布（维护者）
+
+npm 存的是**快照**：发布出去的 tarball 不会跟随仓库，所以只有在"有人发布"时新版本才会
+到 npm。那个"有人"就是 [`.github/workflows/publish.yml`](.github/workflows/publish.yml)，
+它让 npm 包跟随本仓库：
+
+- **往 `main` 推、且改到 `lib/**` 或 `cordis.patch.yml`**：跑测试 → 版本号加一个 patch →
+  发布到 npm → 打 tag 并建 GitHub Release。只改文档的推送不会浪费版本号。
+- **想跳大版本**：在提交信息里写 `[minor]` 或 `[major]`，或者在 Actions 里手动跑一次
+  （Actions → publish → Run workflow）。
+- **某次不想发**：提交信息里写 `[skip publish]`。
+
+工作流会把新版本号写回 `package.json`，所以 tag、Release、npm 与仓库始终一致。
+
+| 安装方式 | 你得到什么 |
+|---|---|
+| `dsh plugin --profile <p> add github:zyd232/dsh-compaction-policy` | 仓库当前状态，立即可用 |
+| `dsh plugin --profile <p> add dsh-compaction-policy` | npm 解析到的那个版本对应的 tarball——发布那一刻就冻结了 |
+
+### 一次性配置
+
+npm 必须先知道这个包存在，才能把它托付给本仓库，所以第一个版本手动发一次：
+
+```powershell
+npm login
+npm publish --access public
+```
+
+然后在 npmjs.com：**包 → Settings → Trusted Publisher → GitHub Actions**，填 user
+`zyd232`、repository `dsh-compaction-policy`、workflow `publish.yml`。之后每个版本都由
+工作流发布，自带 provenance，不需要存任何 token。

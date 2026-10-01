@@ -1,0 +1,132 @@
+name: publish
+
+# npm is a snapshot registry: a published tarball never follows the repository, so
+# "the npm package follows GitHub" has to be built. This workflow is that builder:
+#
+#   push to main touching plugin behaviour  ->  tests  ->  version bump (patch)
+#                                           ->  publish to npm  ->  tag + release
+#
+# Behaviour, not documentation, drives it: the path filter below means README or
+# workflow edits never burn a version. Bump bigger by putting a marker in the commit
+# message ([minor] / [major]), or run the workflow by hand with the bump input.
+#
+# Authentication is npm Trusted Publishing (OIDC) — no long-lived token to store or
+# rotate. One-time setup, after the package exists (see "Releasing" in README.md):
+#   npmjs.com -> package dsh-compaction-policy -> Settings -> Trusted Publisher
+#   -> GitHub Actions: user zyd232, repository dsh-compaction-policy,
+#      workflow publish.yml, environment (empty)
+# A token also works before that configuration exists: uncomment the NODE_AUTH_TOKEN
+# env below and add a granular automation token as the NPM_TOKEN repository secret.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'lib/**'
+      - 'cordis.patch.yml'
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump for this run
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+permissions:
+  contents: write # push the version commit, the tag, and the release
+  id-token: write # npm trusted publishing (OIDC)
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # The version commit below carries this marker, so the follow-up run stops here.
+    if: ${{ !contains(github.event.head_commit.message, '[skip publish]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # The tests import one harness package (an optional peer, so consumers do not
+      # install it); CI installs it to exercise the real host half.
+      - name: Install test dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Test
+        run: npm test
+
+      - name: Decide the version to publish
+        id: next
+        env:
+          MANUAL_BUMP: ${{ github.event.inputs.bump }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          name="$(node -p "require('./package.json').name")"
+          local_version="$(node -p "require('./package.json').version")"
+          published="$(npm view "$name" version 2>/dev/null || true)"
+
+          if [ -z "$published" ]; then
+            echo "not published yet — publishing the repository version $local_version"
+            echo "version=$local_version" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$local_version" != "$published" ]; then
+            echo "repository is already ahead of npm ($local_version vs $published) — publishing $local_version"
+            echo "version=$local_version" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          bump="${MANUAL_BUMP:-patch}"
+          case "$COMMIT_MESSAGE" in
+            *"[major]"*) bump=major ;;
+            *"[minor]"*) bump=minor ;;
+          esac
+          next="$(BUMP="$bump" node -e '
+            const p = require("./package.json");
+            const [major, minor, patch] = p.version.split("-")[0].split(".").map(Number);
+            const bump = process.env.BUMP;
+            process.stdout.write(
+              bump === "major" ? `${major + 1}.0.0`
+              : bump === "minor" ? `${major}.${minor + 1}.0`
+              : `${major}.${minor}.${patch + 1}`,
+            );
+          ')"
+          npm pkg set "version=$next"
+          echo "npm has $published; publishing $next ($bump)"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to npm
+        run: npm publish --access public
+        # Token fallback instead of OIDC:
+        # env:
+        #   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Commit the version, tag it, and open the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${{ steps.next.outputs.version }}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json
+          if git diff --cached --quiet; then
+            echo "package.json already at $version — nothing to commit"
+          else
+            git commit -m "chore(release): v$version [skip publish]"
+            git push origin HEAD:main
+          fi
+          git tag -f "v$version"
+          git push origin "v$version" --force
+          gh release create "v$version" --title "v$version" --generate-notes \
+            || gh release edit "v$version" --generate-notes

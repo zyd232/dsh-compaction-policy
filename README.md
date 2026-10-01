@@ -191,3 +191,39 @@ No build step: `lib/` is the shipped artifact, so installing straight from this
 repository needs no `prepare` script.
 
 MIT licensed — see [LICENSE](LICENSE).
+
+## Releasing
+
+npm holds **snapshots**: a published tarball never follows this repository, so a new
+version reaches npm only when something publishes it. That something is
+[`.github/workflows/publish.yml`](.github/workflows/publish.yml), which is what makes
+the npm package follow this repository:
+
+- **Push to `main` touching `lib/**` or `cordis.patch.yml`** — the tests run, the
+  version is bumped a patch, npm receives it, and the tag and GitHub release are
+  created. Documentation-only pushes never burn a version.
+- **Bigger bump** — put `[minor]` or `[major]` in the commit message, or run the
+  workflow by hand (Actions → publish → Run workflow).
+- **Skip once** — put `[skip publish]` in the commit message.
+
+The workflow writes the new version back into `package.json`, so the tag, the
+release, npm and the repository always agree.
+
+| Install | What you get |
+|---|---|
+| `dsh plugin --profile <p> add github:zyd232/dsh-compaction-policy` | the current repository state, immediately |
+| `dsh plugin --profile <p> add dsh-compaction-policy` | the tarball published for the version npm resolves — frozen at publish time |
+
+### One-time setup
+
+The first version must exist before npm can be told to trust this repository, so it is
+published by hand once:
+
+```powershell
+npm login
+npm publish --access public
+```
+
+Then on npmjs.com: **package → Settings → Trusted Publisher → GitHub Actions**, with
+user `zyd232`, repository `dsh-compaction-policy`, workflow `publish.yml`. Every later
+version is published by the workflow with provenance and no stored token.
