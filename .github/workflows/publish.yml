@@ -105,11 +105,23 @@ jobs:
           echo "npm has $published; publishing $next ($bump)"
           echo "version=$next" >> "$GITHUB_OUTPUT"
 
+      # Authentication, in order of preference:
+      #   1. the NPM_TOKEN repository secret (Settings -> Secrets and variables ->
+      #      Actions) — works immediately, no npm-jside configuration
+      #   2. npm Trusted Publishing (OIDC), when that secret is absent — no stored
+      #      token at all, see the header of this file for the one-time setup
       - name: Publish to npm
-        run: npm publish --access public
-        # Token fallback instead of OIDC:
-        # env:
-        #   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "no NPM_TOKEN secret configured — using OIDC trusted publishing"
+            unset NODE_AUTH_TOKEN
+          else
+            echo "publishing with the NPM_TOKEN repository secret"
+          fi
+          npm publish --access public
 
       - name: Commit the version, tag it, and open the release
         env:
