@@ -155,7 +155,10 @@ drop.
   than misbehave.
 - **Languages.** The panel and this document ship in English and Chinese and
   follow DSH's language setting; more languages are welcome as contributions.
-- Verified against DSH `0.2.0-rc.2`.
+- **Compatibility.** The `@deepseek-ai/*` peer ranges are intentionally open-ended
+  (`>=0.2.0-rc.2`, no upper bound), so a future harness release is never blocked
+  from installing or loading the plugin. If an internal API it relies on changes,
+  it degrades to doing nothing rather than breaking a session.- Verified against DSH `0.2.0-rc.2`.
 
 ## Development
 
