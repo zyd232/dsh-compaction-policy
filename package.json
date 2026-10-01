@@ -17,7 +17,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test tests/policy.test.js tests/instrument.test.js tests/i18n.test.js"
+    "test": "node --test tests/policy.test.js tests/instrument.test.js tests/i18n.test.js tests/docs.test.js"
   },
   "dsh": {
     "bundle": {
@@ -28,7 +28,8 @@
       "inject": [
         "@deepseek-ai/dsh-client-ui-settings"
       ]
-    }
+    },
+    "verifiedWith": "0.2.0-rc.2"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",

@@ -75,6 +75,27 @@ engine while DSH runs.
 - If anything inside the plugin goes wrong, it steps aside and DSH behaves exactly
   as if the plugin weren't installed.
 
+## Which DSH versions this works with
+
+DSH ships quickly, so the support line is stated rather than implied.
+
+| DSH version | Status |
+|---|---|
+| `0.2.0-rc.2` | **Verified** — this release was developed and tested against it |
+| later `0.2.x` / `0.3.x` | Expected to work. The `@deepseek-ai/*` peers are open-ended, so a newer harness still installs and loads the plugin; if one of the internal seams it uses changes, it stops intervening instead of breaking your session |
+| earlier than `0.2.0-rc.2` | Not supported — the plugin wraps the per-agent-preset compaction engine, which only exists in the 0.2 line |
+
+The machine-readable form of this table is the open-ended `@deepseek-ai/*` range in `package.json`, and the verified build is recorded there as `dsh.verifiedWith`.
+
+Two checks tell you it is running on your build:
+
+1. **Settings** shows the **Compaction policy** / **上下文压缩策略** entry — the browser half loaded.
+2. Compaction fires near your configured ratio instead of around half-full — the host half is intervening ([how to tell](#how-to-tell-its-working)).
+
+If it does nothing on your version, that is the designed failure mode rather than a crash: please open an issue with the output of `dsh --version`.
+
+_Last verified: DSH `0.2.0-rc.2`, 2026-10-01._
+
 ## Install
 
 ```powershell
