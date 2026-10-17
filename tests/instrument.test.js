@@ -17,7 +17,7 @@ const AGENT = {
  * @returns the mock context plus the engine and captured listener.
  */
 function makeHarness(options = {}) {
-  const { contextWindow = 150000, totalTokens = 0, withSettings = false } = options
+  const { contextWindow = 150000, totalTokens = 0 } = options
   const calls = []
   const engine = {
     async compactIfNeeded(agent, trigger, signal) {
@@ -27,7 +27,7 @@ function makeHarness(options = {}) {
   }
   let listener
   let listenerOptions
-  const installed = []
+  const injected = []
   const ctx = {
     logger: { debug() {}, warn() {}, info() {} },
     on(event, fn, opts) {
@@ -36,15 +36,17 @@ function makeHarness(options = {}) {
       listenerOptions = opts
       return () => {}
     },
+    // 0.2 derives the settings form from Config alone. Any registration call here
+    // would be a stale-API regression, so the harness records the attempt.
     inject(deps, callback) {
-      assert.deepEqual(deps, ['settings'])
-      if (withSettings) callback({ settings: { installSection: (...args) => installed.push(args) } })
+      injected.push(deps)
+      callback?.({})
     },
     agentPresets: { serviceFor: () => engine },
     llm: { async resolveModelInfo() { return { context: { contextWindow } } } },
     tokenMeter: { measure: () => ({ totalTokens }) },
   }
-  return { ctx, engine, calls, installed, fire: (payload, next) => listener(payload, next), listenerOptions: () => listenerOptions }
+  return { ctx, engine, calls, injected, fire: (payload, next) => listener(payload, next), listenerOptions: () => listenerOptions }
 }
 
 const CONFIG = { enabled: true, routes: 'llama-cpp', triggerRatio: 0.8, headroomTokens: 24576 }
@@ -61,16 +63,26 @@ test('plugin contract: name, inject, and a schemastery Config', () => {
   assert.ok(json.includes('"volatile":true'), 'fields must be volatile')
 })
 
-test('registers the settings namespace under the row id when settings is composed', () => {
-  const h = makeHarness({ withSettings: true })
+test('registers nothing: 0.2 derives the settings form from Config alone', () => {
+  const h = makeHarness()
   apply(h.ctx, CONFIG)
-  assert.equal(h.installed.length, 1)
-  const [owner, ns, schema, entry, hooks] = h.installed[0]
-  assert.equal(owner, h.ctx)
-  assert.equal(ns, 'compaction-policy')
-  assert.equal(schema, Config)
-  assert.equal(typeof hooks.setSource, 'function')
-  assert.equal(hooks.applies, 'live')
+  assert.deepEqual(h.injected, [], 'the removed installSection API must not be called')
+})
+
+test('re-reads the live config on every check, so a saved change applies at once', async () => {
+  const config = { enabled: true, routes: 'llama-cpp', triggerRatio: 0.8, headroomTokens: 24576 }
+  const h = makeHarness({ totalTokens: 84464 }) // stock would compact here (56%)
+  apply(h.ctx, config)
+  await h.fire({ agent: AGENT }, () => {})
+  assert.equal(await h.engine.compactIfNeeded(AGENT, 'pressure'), null, 'below our gate the engine is skipped')
+  // The owner saves a lower ratio through the form. The same captured config object
+  // is normalized again per check, so no remount or listener re-registration is needed.
+  config.triggerRatio = 0.4 // trigger becomes 60,000 of the 150k window
+  assert.notEqual(
+    await h.engine.compactIfNeeded(AGENT, 'pressure'),
+    null,
+    'the new ratio must take effect on the next check',
+  )
 })
 
 test('the pre-step listener installs the wrapper and always calls next', async () => {
@@ -141,15 +153,15 @@ test('disabled policy and empty routes delegate everything', async () => {
   assert.equal(noRoutes.calls.length, 1)
 })
 
-test('setSource keeps the live policy in step with the settings document', async () => {
-  const h = makeHarness({ totalTokens: 90000, withSettings: true })
-  apply(h.ctx, CONFIG)
-  const hooks = h.installed[0][4]
+test('a live reserve change applies to the next check', async () => {
+  const config = { ...CONFIG }
+  const h = makeHarness({ totalTokens: 90000 })
+  apply(h.ctx, config)
   await h.fire({ agent: AGENT }, () => {})
   // 90,000 is below 120,000 → skipped under the initial policy
   assert.equal(await h.engine.compactIfNeeded(AGENT, 'pressure'), null)
-  // the user lowers the headroom in the settings UI; the same pressure now qualifies
-  hooks.setSource({ ...CONFIG, headroomTokens: 65536 })
+  // the owner raises the reserve through the form; the same pressure now qualifies
+  config.headroomTokens = 65536 // trigger becomes 84,464 of the 150k window
   assert.notEqual(await h.engine.compactIfNeeded(AGENT, 'pressure'), null)
   assert.equal(h.calls.length, 1)
 })

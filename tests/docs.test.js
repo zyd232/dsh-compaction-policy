@@ -5,6 +5,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import semver from 'semver'
 
 const root = new URL('..', import.meta.url)
 const pkg = JSON.parse(readFileSync(new URL('package.json', root), 'utf8'))
@@ -19,14 +20,19 @@ test('package.json declares the verified DSH build', () => {
   assert.match(verified, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, 'must look like a version')
 })
 
-test('every harness peer opens at the verified build and never caps the range', () => {
+test('every harness peer is open-ended and admits the verified build', () => {
   const peers = Object.entries(pkg.peerDependencies ?? {}).filter(([name]) =>
     /^@deepseek-ai\/dsh(-|$)/.test(name),
   )
   assert.ok(peers.length > 0, 'the plugin consumes harness services, so it declares harness peers')
+  const ranges = new Set(peers.map(([, range]) => range))
+  assert.equal(ranges.size, 1, 'the harness peers must move together')
   for (const [name, range] of peers) {
-    assert.equal(range, `>=${verified}`, `${name} must open exactly at the verified build`)
     assert.ok(!range.includes('<'), `${name} must not carry an upper bound (a capped range makes DSH skip the bundle)`)
+    assert.ok(
+      semver.satisfies(verified, range, { includePrerelease: true }),
+      `${name} (${range}) must admit the verified build ${verified}`,
+    )
   }
 })
 

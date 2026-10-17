@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Compaction policy",
+    "description": "Compacts the conversation at the point you choose instead of far too early."
+  }
+}

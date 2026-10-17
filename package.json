@@ -7,14 +7,16 @@
   "exports": {
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "files": [
     "lib",
     "cordis.patch.yml",
     "README.md",
     "README-zh.md",
-    "LICENSE"
+    "LICENSE",
+    "locale"
   ],
   "scripts": {
     "test": "node --test tests/policy.test.js tests/instrument.test.js tests/i18n.test.js tests/docs.test.js"
@@ -29,7 +31,14 @@
         "@deepseek-ai/dsh-client-ui-settings"
       ]
     },
-    "verifiedWith": "0.2.0-rc.2"
+    "verifiedWith": "0.2.1-rc.2",
+    "compatibility": {
+      "dsh": ">=0.2.0-rc.2",
+      "dshReleases": {
+        "0.2.0-rc.2": "compatible",
+        "0.2.1-rc.2": "compatible"
+      }
+    }
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
@@ -97,6 +106,7 @@
     "llm"
   ],
   "devDependencies": {
-    "@deepseek-ai/schemastery": "^3.18.2"
+    "@deepseek-ai/schemastery": "^3.18.2",
+    "semver": "^7.7.2"
   }
 }

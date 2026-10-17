@@ -81,7 +81,7 @@ DSH ships quickly, so the support line is stated rather than implied.
 
 | DSH version | Status |
 |---|---|
-| `0.2.0-rc.2` | **Verified** — this release was developed and tested against it |
+| `0.2.1-rc.2` | **Verified** — this release was developed and tested against it |
 | later `0.2.x` / `0.3.x` | Expected to work. The `@deepseek-ai/*` peers are open-ended, so a newer harness still installs and loads the plugin; if one of the internal seams it uses changes, it stops intervening instead of breaking your session |
 | earlier than `0.2.0-rc.2` | Not supported — the plugin wraps the per-agent-preset compaction engine, which only exists in the 0.2 line |
 
@@ -94,7 +94,7 @@ Two checks tell you it is running on your build:
 
 If it does nothing on your version, that is the designed failure mode rather than a crash: please open an issue with the output of `dsh --version`.
 
-_Last verified: DSH `0.2.0-rc.2`, 2026-10-01._
+_Last verified: DSH `0.2.1-rc.2`, 2026-10-17 (previously `0.2.0-rc.2`)._
 
 ## Install
 
