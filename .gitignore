@@ -10,3 +10,7 @@ node_modules/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# the lockfile is not shipped and this package has no runtime deps; keeping it out
+# avoids a file that looks like it matters to users and churns on every release
+package-lock.json
