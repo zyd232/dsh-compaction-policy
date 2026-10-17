@@ -135,12 +135,6 @@ jobs:
           version="${{ steps.next.outputs.version }}"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          # keep the lockfile's root version in step with the bump; npm ci tolerates a
-          # mismatch, but a stale one reads like a mistake
-          if [ -f package-lock.json ]; then
-            npm install --package-lock-only --no-audit --no-fund >/dev/null 2>&1 || true
-            git add package-lock.json
-          fi
           git add package.json
           if git diff --cached --quiet; then
             echo "package.json already at $version — nothing to commit"
