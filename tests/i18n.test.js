@@ -63,8 +63,13 @@ function makeLocale() {
   }
 }
 
-/** Mock Cordis client context capturing every registration the plugin makes. */
-function makeCtx({ withForms = true } = {}) {
+/**
+ * Mock Cordis client context capturing every registration the plugin makes.
+ *
+ * `writable` mirrors `ConfigFormSnapshot.writable` — the Host document's own
+ * answer to whether it accepts writes, and the only switch the snapshot has.
+ */
+function makeCtx({ withForms = true, writable = true } = {}) {
   const locale = makeLocale()
   const captured = { slots: [], effects: [], resolved: undefined }
   const form = {
@@ -74,8 +79,7 @@ function makeCtx({ withForms = true } = {}) {
       base: {},
       user: { routes: 'llama-cpp' },
       revision: 3,
-      writable: true,
-      mode: 'host',
+      writable,
     }),
     subscribe: () => () => {},
     set: async () => true,
@@ -120,6 +124,41 @@ function collectStrings(node, out = []) {
   }
   collectStrings(node.children, out)
   return out
+}
+
+/** Collect every host element of one type, in document order. */
+function collectNodes(node, type, out = []) {
+  if (node === null || node === undefined || typeof node !== 'object') return out
+  if (Array.isArray(node)) {
+    for (const child of node) collectNodes(child, type, out)
+    return out
+  }
+  if (node.type === type) out.push(node)
+  collectNodes(node.children, type, out)
+  return out
+}
+
+/**
+ * Expand `Field` component elements into the host elements they render — the
+ * fake React never invokes a component, so the inputs only appear once a test
+ * does. One level is enough: `Field` renders plain elements only.
+ */
+function expandFields(node) {
+  if (node === null || node === undefined || typeof node !== 'object') return node
+  if (Array.isArray(node)) return node.map(expandFields)
+  if (typeof node.type === 'function') {
+    return node.type.name === 'Field' ? expandFields(node.type(node.props)) : node
+  }
+  return { ...node, children: node.children.map(expandFields) }
+}
+
+/** Render the settings panel against a Host form with the given writability. */
+function renderPanel(options) {
+  const { ctx, captured } = makeCtx(options)
+  module.apply(ctx)
+  const section = captured.slots.find((s) => s.registration.name === 'settings.section')
+  const tree = expandFields(section.Component(captured.resolved))
+  return { tree, strings: collectStrings(tree) }
 }
 
 const module = loadBundle()
@@ -191,4 +230,31 @@ test('without the settings service the panel reports it instead of throwing', ()
   const { ctx, captured } = makeCtx({ withForms: false })
   module.apply(ctx)
   assert.equal(captured.slots.length, 0, 'no section is registered when configForms is missing')
+})
+
+test('a Host that accepts writes gets an editable panel and no read-only notice', () => {
+  const { strings, tree } = renderPanel()
+  assert.ok(
+    !strings.includes('This connection is read-only, so changes are not written to the host.'),
+    'the read-only notice must not appear on a writable Host',
+  )
+
+  const inputs = collectNodes(tree, 'input')
+  assert.equal(inputs.length, 3, 'routes, trigger ratio and output reserve are text/number inputs')
+  for (const input of inputs) assert.notEqual(input.props.disabled, true, `${input.props['aria-label']} must stay editable`)
+
+  const toggle = collectNodes(tree, 'button').find((button) => button.props.role === 'switch')
+  assert.ok(toggle, 'the enable switch must render')
+  assert.notEqual(toggle.props.disabled, true, 'the enable switch must stay clickable')
+})
+
+test('a read-only Host disables every control and says why', () => {
+  const { strings, tree } = renderPanel({ writable: false })
+  assert.ok(strings.includes('This connection is read-only, so changes are not written to the host.'))
+
+  for (const input of collectNodes(tree, 'input')) {
+    assert.equal(input.props.disabled, true, `${input.props['aria-label']} must be disabled`)
+  }
+  const toggle = collectNodes(tree, 'button').find((button) => button.props.role === 'switch')
+  assert.equal(toggle.props.disabled, true, 'the enable switch must be disabled too')
 })
