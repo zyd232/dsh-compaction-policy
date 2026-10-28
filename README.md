@@ -77,24 +77,15 @@ engine while DSH runs.
 
 ## Which DSH versions this works with
 
-DSH ships quickly, so the support line is stated rather than implied.
-
 | DSH version | Status |
 |---|---|
-| `0.2.1-rc.2` | **Verified** — this release was developed and tested against it |
-| later `0.2.x` / `0.3.x` | Expected to work. The `@deepseek-ai/*` peers are open-ended, so a newer harness still installs and loads the plugin; if one of the internal seams it uses changes, it stops intervening instead of breaking your session |
-| earlier than `0.2.0-rc.2` | Not supported — the plugin wraps the per-agent-preset compaction engine, which only exists in the 0.2 line |
+| `0.2.1-rc.3` | **Verified** — the build this release was developed and tested against |
+| later `0.2.x` / `0.3.x` | Expected to work: the peers are open-ended, and if an internal seam changes the plugin steps aside instead of breaking your session |
+| earlier than `0.2.0-rc.2` | Not supported — it wraps the per-agent-preset compaction engine, which only exists in the 0.2 line |
 
-The machine-readable form of this table is the open-ended `@deepseek-ai/*` range in `package.json`, and the verified build is recorded there as `dsh.verifiedWith`.
+The machine-readable form of this is in `package.json`: open-ended `@deepseek-ai/*` peer ranges, with the tested build recorded in `dsh.verifiedWith`. If it does nothing on your build, nothing breaks — check that **Settings** lists **Compaction policy**, then open an issue with `dsh --version`.
 
-Two checks tell you it is running on your build:
-
-1. **Settings** shows the **Compaction policy** / **上下文压缩策略** entry — the browser half loaded.
-2. Compaction fires near your configured ratio instead of around half-full — the host half is intervening ([how to tell](#how-to-tell-its-working)).
-
-If it does nothing on your version, that is the designed failure mode rather than a crash: please open an issue with the output of `dsh --version`.
-
-_Last verified: DSH `0.2.1-rc.2`, 2026-10-17 (previously `0.2.0-rc.2`)._
+_Last verified: DSH `0.2.1-rc.3`, 2026-10-28 (previously `0.2.1-rc.2`)._
 
 ## Install
 
