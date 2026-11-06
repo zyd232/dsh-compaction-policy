@@ -33,6 +33,13 @@ test('every harness peer is open-ended and admits the verified build', () => {
       semver.satisfies(verified, range, { includePrerelease: true }),
       `${name} (${range}) must admit the verified build ${verified}`,
     )
+    // The loader's check passes includePrerelease, but npm and pnpm use the default
+    // semantics, where a prerelease only matches a comparator on its own tuple. One
+    // union arm per verified line is what keeps installs warning-free.
+    assert.ok(
+      semver.satisfies(verified, range),
+      `${name} (${range}) must also admit ${verified} under npm's default semver`,
+    )
   }
 })
 

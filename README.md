@@ -79,13 +79,13 @@ engine while DSH runs.
 
 | DSH version | Status |
 |---|---|
-| `0.2.1-rc.3` | **Verified** — the build this release was developed and tested against |
+| `0.2.2-rc.1` | **Verified** — the build this release was developed and tested against |
 | later `0.2.x` / `0.3.x` | Expected to work: the peers are open-ended, and if an internal seam changes the plugin steps aside instead of breaking your session |
 | earlier than `0.2.0-rc.2` | Not supported — it wraps the per-agent-preset compaction engine, which only exists in the 0.2 line |
 
 The machine-readable form of this is in `package.json`: open-ended `@deepseek-ai/*` peer ranges, with the tested build recorded in `dsh.verifiedWith`. If it does nothing on your build, nothing breaks — check that **Settings** lists **Compaction policy**, then open an issue with `dsh --version`.
 
-_Last verified: DSH `0.2.1-rc.3`, 2026-10-28 (previously `0.2.1-rc.2`)._
+_Last verified: DSH `0.2.2-rc.1`, 2026-11-06 (previously `0.2.1-rc.3`)._
 
 ## Install
 
@@ -168,5 +168,5 @@ drop.
 - **Languages.** The panel and this document ship in English and Chinese and
   follow DSH's language setting; more languages are welcome as contributions.
 - **Compatibility.** The `@deepseek-ai/*` peer ranges are intentionally open-ended
-  (`>=0.2.0-rc.2`, no upper bound), so a future harness release can never prevent
+  (`>=0.2.0-rc.2`, one arm per verified line, no upper bound), so a future harness release can never prevent
   the plugin from installing or loading.
