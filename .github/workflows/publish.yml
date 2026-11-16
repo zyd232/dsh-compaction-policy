@@ -15,8 +15,17 @@ name: publish
 #   npmjs.com -> package dsh-compaction-policy -> Settings -> Trusted Publisher
 #   -> GitHub Actions: user zyd232, repository dsh-compaction-policy,
 #      workflow publish.yml, environment (empty)
-# A token also works before that configuration exists: uncomment the NODE_AUTH_TOKEN
-# env below and add a granular automation token as the NPM_TOKEN repository secret.
+#
+# Two things keep the id-token exchange working, and both are easy to break while
+# "tidying up" this file:
+#   * npm >= 11.5.1. Node 22 ships npm 10.x, which has no OIDC path at all — a
+#     token-less publish there dies with ENEEDAUTH, so the step below pins 11.x.
+#   * no registry-url on setup-node. It writes `_authToken=${NODE_AUTH_TOKEN}` into
+#     .npmrc; with no token that is an empty credential, npm believes it is already
+#     authenticated and skips the exchange, and the registry answers 404.
+#
+# The NPM_TOKEN repository secret is a fallback only, used when a run cannot mint
+# an id-token; the publish step decides between the two paths at run time.
 
 on:
   push:
@@ -52,12 +61,27 @@ jobs:
 
       # v5 turns its package-manager cache on by default and fails on a repository
       # whose package manager it cannot resolve; this plugin has no build step and a
-      # three-package install, so the cache buys nothing.
+      # three-package install, so the cache buys nothing. No registry-url — see the
+      # header: it would write an empty authToken into .npmrc and defeat OIDC.
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
           package-manager-cache: false
+
+      # The npm bundled with Node 22 cannot exchange the GitHub id-token, so a
+      # token-less publish would fail with ENEEDAUTH. Pin the 11.x line rather than
+      # `latest`: npm 12 also supports trusted publishing but turns install scripts
+      # into opt-in, which nothing here needs.
+      - name: Use an npm that supports trusted publishing
+        run: |
+          set -euo pipefail
+          npm install -g 'npm@^11.5.1'
+          installed="$(npm --version)"
+          echo "npm $installed (trusted publishing needs >= 11.5.1)"
+          node -e '
+            const [major, minor] = process.argv[1].split(".").map(Number);
+            process.exit(major > 11 || (major === 11 && minor >= 5) ? 0 : 1);
+          ' "$installed"
 
       # The tests import one harness package (an optional peer, so consumers do not
       # install it); CI installs it to exercise the real host half.
@@ -109,21 +133,28 @@ jobs:
           echo "npm has $published; publishing $next ($bump)"
           echo "version=$next" >> "$GITHUB_OUTPUT"
 
-      # Authentication, in order of preference:
-      #   1. the NPM_TOKEN repository secret (Settings -> Secrets and variables ->
-      #      Actions) — works immediately, no npm-jside configuration
-      #   2. npm Trusted Publishing (OIDC), when that secret is absent — no stored
-      #      token at all, see the header of this file for the one-time setup
+      # Trusted publishing (OIDC) is the default path: GitHub signs this run's
+      # id-token and npm exchanges it for a credential scoped to this repository,
+      # workflow, and environment — nothing stored is involved in a normal release.
+      # The NPM_TOKEN secret is only a fallback for a runner that cannot mint an
+      # id-token: the token is written into .npmrc in that branch alone. Note the
+      # asymmetry — OIDC needs an .npmrc *without* a token line, a fallback needs one
+      # *with* it, so the two cannot both be pre-configured by setup-node.
       - name: Publish to npm
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "no NPM_TOKEN secret configured — using OIDC trusted publishing"
+          if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "publishing with npm trusted publishing (OIDC)"
             unset NODE_AUTH_TOKEN
+          elif [ -n "${NPM_TOKEN:-}" ]; then
+            echo "::warning::no id-token on this run — falling back to the NPM_TOKEN secret"
+            echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> "$HOME/.npmrc"
+            export NODE_AUTH_TOKEN="$NPM_TOKEN"
           else
-            echo "publishing with the NPM_TOKEN repository secret"
+            echo "::error::neither an id-token nor the NPM_TOKEN secret is available"
+            exit 1
           fi
           npm publish --access public
 
